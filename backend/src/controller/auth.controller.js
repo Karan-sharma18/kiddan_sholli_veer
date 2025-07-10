@@ -2,127 +2,122 @@ import tryCatch from "../utils/tryCatch.js";
 import User from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { generateAccessToken, generateRefreshToken } from "../utils/token.js";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+} from "../utils/token.js";
 
 const register = tryCatch(async (req, res, next) => {
   const { fullName, email, password, username } = req.body;
 
   if (!fullName || !email || !password || !username) {
-    res.status(400);
-    throw new Error("Invalid request");
+    return res.status(400).json({ message: "All fields are required" });
   }
 
-  // Check the username is valid charachter
   const usernameRegex = /^(?!.*\.\.)(?!.*\.$)[a-zA-Z0-9._]{1,30}$/;
   if (!usernameRegex.test(username)) {
-    res.status(400);
-    throw new Error("Invalid username try again");
+    return res.status(400).json({ message: "Invalid username format" });
   }
 
-  // Checking Username is Taken 👇🏼
-  const isUsernameTaken = await User.exists({ username: req.body.username });
+  const isUsernameTaken = await User.exists({ username: username.toLowerCase() });
   if (isUsernameTaken) {
-    res.status(400);
-    throw new Error("Username Already is taken");
+    return res.status(409).json({ message: "Username already taken" });
   }
 
-  // Checking Email is Taken 👇🏼
-  const isEmailTaken = await User.exists({ email: req.body.email });
+  const isEmailTaken = await User.exists({ email });
   if (isEmailTaken) {
-    res.status(400);
-    throw new Error("Email Already is taken");
+    return res.status(409).json({ message: "Email already taken" });
   }
 
-  // Hashing Password👇🏼
   const salt = bcrypt.genSaltSync(10);
-  const hashedPassword = bcrypt.hashSync(req.body.password, salt);
+  const hashedPassword = bcrypt.hashSync(password, salt);
 
-  // Storing User Info to Database 👇🏼
   await User.create({
-    email: req.body.email,
-    fullName: req.body.fullName,
-    username: req.body.username.toLowerCase().trim(),
+    fullName,
+    email,
+    username: username.toLowerCase().trim(),
     password: hashedPassword,
   });
-  res
+
+  return res
     .status(201)
-    .json({ status: "success", message: "Account Created Successfully" });
+    .json({ message: "Account created successfully" });
 });
 
 const login = tryCatch(async (req, res, next) => {
-  // Validation 👇🏼
-  const { password, username } = req.body;
-  if (!password || !username) {
-    res.status(400);
-    throw new Error("Invalid request");
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ message: "Username and password required" });
   }
 
-  // Check User is Exists or not👇🏼
-  const isUserExist = await User.exists({ username: req.body.username.toLowerCase() });
-  if (!isUserExist) {
-    res.status(404);
-    throw new Error("User bot found");
+  const userDoc = await User.findOne({ username: username.toLowerCase() }).select("+password");
+  if (!userDoc) {
+    return res.status(404).json({ message: "User not found" });
   }
 
-  // Getting UserInfo Using Username 👇🏼
-  const userDoc = await User.findOne({ username: req.body.username }).select(
-    "+password"
-  );
-
-  // Compare User Hashed Pass to req pass 👇🏼
-  const hashedPass = userDoc.password;
-  const isPassOk = bcrypt.compareSync(req.body.password, hashedPass);
+  const isPassOk = bcrypt.compareSync(password, userDoc.password);
   if (!isPassOk) {
-    res.status(400);
-    throw new Error("User not found");
+    return res.status(401).json({ message: "Incorrect password" });
   }
 
-  // Generate Token then Send Refresh Token Via Cookie and send  accessToken as a response
   const refreshToken = generateRefreshToken(userDoc._id);
-  const accessToken = generateAccessToken({
-    userId: userDoc._id,
-  });
+  const accessToken = generateAccessToken({ userId: userDoc._id });
 
-  // Set refresh token as a HTTP-only cookie
-  res
+  return res
     .cookie("refreshToken", refreshToken, {
       httpOnly: true,
       path: "/",
       secure: process.env.NODE_ENV === "production",
-      sameSite: "None", //lax in dev and none in production
-      maxAge: 30 * 24 * 60 * 60 * 1000, //30 days
+      sameSite: "None",
+      maxAge: 30 * 24 * 60 * 60 * 1000,
     })
-    .json({ accessToken, message: "Login Successfully" });
+    .status(200)
+    .json({
+      message: "Login Successfully",
+      accessToken,
+      user: {
+        id: userDoc._id,
+        username: userDoc.username,
+        email: userDoc.email,
+        fullName: userDoc.fullName,
+      },
+    });
 });
 
-const refreshToken = tryCatch(async (req, res) => {
-  const _refreshToken = req.cookies.refreshToken; //get referesh token from cookies that i put before in http only cookie
-  const decoded = await jwt.verify(
-    _refreshToken,
-    process.env.REFRESH_TOKEN_SECRET
-  );
-
+const refreshToken = tryCatch(async (req, res, next) => {
+  const _refreshToken = req.cookies.refreshToken;
   if (!_refreshToken) {
-    res.status(401);
-    throw new Error("Please login again");
+    return res.status(401).json({ message: "Please login again" });
   }
 
-  // decoded the refresh token and get user id from decoded token
-  const userId = decoded.userId;
-  const userDoc = await User.findById(userId);
+  let decoded;
+  try {
+    decoded = jwt.verify(_refreshToken, process.env.REFRESH_TOKEN_SECRET);
+  } catch (err) {
+    return res.status(403).json({ message: "Invalid refresh token" });
+  }
+
+  const userDoc = await User.findById(decoded.userId);
   if (!userDoc) {
-    res.status(401);
-    throw new Error("Can't find this account");
+    return res.status(404).json({ message: "Account not found" });
   }
 
-  const accessToken = generateAccessToken({ userId });
-  res.json({ accessToken });
+  const newAccessToken = generateAccessToken({ userId: userDoc._id });
+
+  return res.status(200).json({ accessToken: newAccessToken });
 });
 
 const logout = tryCatch(async (req, res, next) => {
-  // Clear Client Cookie 👇🏼
-  res.clearCookie("refreshToken").json({ message: "Logout Successfull" });
+  res.clearCookie("refreshToken", { path: "/" });
+  return res.status(200).json({ message: "Logout successful" });
 });
 
-const authController = { login, register, logout, refreshToken };
+const authController = {
+  register,
+  login,
+  refreshToken,
+  logout,
+};
+
 export default authController;
