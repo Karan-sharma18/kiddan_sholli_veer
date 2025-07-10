@@ -9,6 +9,12 @@ import connectToDB from "./config/db.config.js";
 import rootRouter from "./routes/index.js";
 import fileUpload from "express-fileupload";
 
+import dotenv from "dotenv";
+dotenv.config();
+
+
+
+
 // Initailizing Our Express Server 👇🏼
 const app = express();
 
@@ -39,3 +45,6 @@ connectToDB(() =>
     console.log(chalk.white(`Server Is Running on: http://localhost:${PORT}`));
   })
 );
+app.get('/', (req, res) => {
+  res.send('🚀 Backend API is running!');
+});

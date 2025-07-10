@@ -22,8 +22,8 @@ const LoginView = () => {
     formState: { errors },
   } = useForm({
     defaultValues: {
-      username: "solomon",
-      password: "123456",
+      username: "kannu_paa_aka_sholli_veer",
+      password: "",
     },
     resolver: yupResolver(LoginValidationSchema),
   });
