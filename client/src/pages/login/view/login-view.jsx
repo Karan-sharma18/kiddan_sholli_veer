@@ -23,7 +23,7 @@ const LoginView = () => {
   } = useForm({
     defaultValues: {
       username: "kannu_paa_aka_sholli_veer",
-      password: "",
+      password: "123456",
     },
     resolver: yupResolver(LoginValidationSchema),
   });
@@ -69,8 +69,7 @@ const LoginView = () => {
                     <img src={instagramLogo} alt="" className="w-[180px]" />
 
                     <h2 className="texdt-center text-sm text-cool-white">
-                      Simply hit login to instantly explore the Instagram clone
-                      using the pre-filled test credentials.
+                      kdaach gulla thaa
                     </h2>
                   </header>
 
